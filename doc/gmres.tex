@@ -1,0 +1,279 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage[left=2.0cm,right=2.0cm,top=1.5cm,bottom=2.0cm]{geometry}
+\usepackage[linesnumbered,ruled,vlined]{algorithm2e}
+\usepackage{amsfonts}
+\usepackage{amsmath}
+
+\usepackage{biblatex} %Imports biblatex package
+\addbibresource{references.bib} %Import the 
+
+\newcommand{\norm}[1]{\lVert#1\rVert}
+
+\title{GMRES - Overview and Algorithms}
+\author{}
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section{Basic}
+
+% \begin{algorithm}
+%     \caption{Arnoldi Iteration with modified Gram–Schmidt}
+%     \DontPrintSemicolon
+%     \KwIn{\\
+%     $A$: Matrix of size $m \times m$ \\
+%     $b$: First Krylov vector \\
+%     $n$: Krylov subspace size
+%     }
+%     \KwOut{\\
+%     $Q$: $m \times (n + 1)$, columns contain the Krylov vectors \\
+%     $h$: $(n + 1) \times n$, A on basis Q. It is upper Hessenberg
+%     }
+%     \tcp{Start with vector $q_1$ with $|| q_1 || = 0$}
+%     $q_1 = b / ||b||$ \\
+%     \tcp{Generate new Krylov vector $q_{j+1}$}
+%     \For{j=1..n}    
+%         { 
+%             $v = A q_j$ \\
+%             \For{i=1..j}   {
+%                 $h_{i,j} = q_i^T v$ \\
+%                 $v = v - h_{i,j} q_i$
+%             }
+%             $h_{j+1, j} = || v ||$ \\
+%             $q_{j+1} = v / h_{j+1, j}$ \\
+%             Store $q_{j+1}$ in $j+1$-th column of $Q$
+%         }
+% \end{algorithm}
+
+\begin{algorithm}
+    \DontPrintSemicolon
+    \caption{GMRES}
+    \KwIn{$A$, $b$, maxiter, tol}
+    \KwOut{$x$, $\norm{r}$}
+    
+    $x_0$ = Initial Guess \\
+    $r_0 = b - A x_0$ \\
+    $m = $ maxiter \\
+
+    \tcp{First Krylov vector $q_1$ with $\norm{ q_1 } = 1$}
+     $q_1 = r_0 / \norm{r_0}$ \\
+    \For{j=1..m}  {
+            \tcp{(1) Generate Krylov vector $q_{j+1}$}
+            $v = A q_j$ \\
+            \For{i=1..j}   {
+                $h_{i,j} = q_i^T v$ \\
+                $v = v - h_{i,j} q_i$
+            }
+            $h_{j+1, j} = \norm{ v }$ \\
+            $q_{j+1} = v / h_{j+1, j}$ \\
+            Add $q_{j+1}$ as column to $Q_j \rightarrow Q_{j+1}$ \\
+
+            % \tcp{(2) Find search vector $z$ that minimizes $\norm{ b - A(x_0 + z)}$}
+            \tcp{(2) Find search vector $y_j$, where $x = x_0 + Q_j y_j$}
+            min $\norm{ \beta e_1^{j+1} -  \tilde{H}_j y }$ for $y_j$, where $\tilde{H}_j = \{h_{i,j}\}_{1\le j+1, 1\le j}$, $\beta = \norm{ r_0 } $,  and $e_1^{j+1} = [1, 0, .., 0]^T \in \mathbb{R}^{j+1}$\\
+            \tcp{(3) Check residual}
+            $x = x_0 + Q_j y_j$ \\
+            $r = b - A x$ \\
+            \If{$|| r || < $ tol} {
+                break
+            }
+    }
+\end{algorithm}
+
+References:
+\cite{Saad2003}%, \cite{Matinfar2012}
+
+\section{Solving minimization problem with Givens rotation}
+
+One part of the GMRES is to find the vector $y_j$ which minimizes 
+\begin{equation}
+    \text{min} \norm{ \tilde{H}_j y_j - \beta e_1 }
+    \label{eq:min}
+\end{equation}
+where $\tilde{H}_j$ is an $(j+1)\times j$ upper Hessenberg Matrix. We can use Givens rotation to transfer \eqref{eq:min} into an upper triangular system of equations of order $j$. A Givens rotation matrix $J_i$ with order $j+1$ is an identity matrix where only four elements are replaced as follows
+\begin{equation*}
+    \begin{pmatrix}
+    1 &     &     & 0 \\
+      & c_i & s_i &   \\
+      &-s_i & c_i &   \\
+    0 &     &     & 1
+    \end{pmatrix}
+\end{equation*}
+such that $\begin{pmatrix}c_i & s_i   \\ -s_i & c_i \end{pmatrix}  \begin{pmatrix} h_{i,i} \\ h_{i+1, i} \end{pmatrix} = \begin{pmatrix} * \\ 0 \end{pmatrix}$. By multiplying the product of $j$ Givens rotations $\Omega_j = J_jJ_{i-1}..J_1$ from the left-hand side to $\tilde{H}_j$ we obtain a triangular system
+\begin{equation*}
+\tilde{H}_j = 
+    \begin{pmatrix}
+    * & * & * & * \\
+    * & * & * & * \\
+      & * & * & * \\
+      &   & * & * \\
+      &   &   & * \\
+    \end{pmatrix},
+    \qquad
+ \Omega_j\tilde{H}_j = 
+ \begin{pmatrix}
+    + & + & + & + \\
+    0 & + & + & + \\
+      & 0 & + & + \\
+      &   & 0 & + \\
+      &   &   & 0 \\
+    \end{pmatrix}
+    =
+    \begin{pmatrix}
+        R_j \\
+        0
+    \end{pmatrix},
+    \quad (R_j \in\mathbb{R}^{j\times j}).
+\end{equation*}
+Multiplying the Givens product $\Omega_j$ to $\beta e_1$ gives
+
+\begin{equation*}
+    \Omega_j \beta e_1 =
+    \begin{pmatrix}
+        g_j \\
+        \lambda_j
+    \end{pmatrix},
+    \quad (g_j \in\mathbb{R}^{j}, \lambda_j \in\mathbb{R}^{1}).
+\end{equation*}
+Thus multiplying $\Omega_j$ to the minimization problem \eqref{eq:min}, we find
+\begin{equation}
+    \text{min}  \norm{ \Omega_j\tilde{H}_j y_j - \Omega_j\beta e_1 } = \text{min} \norm{R_j y_j - g_j}.
+    \label{eq:min2} 
+\end{equation}
+
+In the code, we now store $R_j$ instead of $\tilde{H}_j$. At each GMRES iteration, we extend $\tilde{H}_j \rightarrow \tilde{H}_{j+1}$ by a new row and a new column, say $\tilde{h} \in \mathbb{R}^{j+2}$. Since we store $R_j$ instead of $\tilde{H}_j$, we only need to apply the Givens rotations $\Omega_j$ to $\tilde{h}$ and add the new column to $R_j \rightarrow R_{j+1}$. We do not store the rotation matrices $J_j$ explicitly but keep $c_j$ and $s_j$ from each iteration.
+
+\subsection{Residual Norm}
+
+From \eqref{eq:min2} we get $y_j$, from which we can update $x = x_0 + Q_j y_j$ and calculate the residual norm $\norm{b - A x}$ to assess whether our algorithm has converged. In this case, we would solve the minimization problem \eqref{eq:min2} in each GMRES iteration. However, there is a better way to get the residual norm, without explicitly calculating $y_j$ and $x$ at each iteration, see also \cite{Saad86} and \cite{Saad2003} \S 6.5.3.
+
+Substituting $\Omega_j\tilde{H}_j=\begin{pmatrix} R_j \\0 \end{pmatrix}$ and  $\Omega_j \beta e_1=\begin{pmatrix} g_j \\\lambda_j \end{pmatrix}$ in \eqref{eq:min2} gives
+\begin{equation*}
+    \norm{ \Omega_j\tilde{H}_j y_j - \Omega_j\beta e_1 } = \norm{\begin{pmatrix} R_j \\0 \end{pmatrix} y_j - \begin{pmatrix} g_j \\\lambda_j \end{pmatrix} } = \norm{R_j y_j - g_j} + \norm{\lambda_j}.
+\end{equation*}
+Since $\norm{R_j y_j - g_j}$ vanishes by construction from \eqref{eq:min2}, the residual norm is thus the absolute value of the last component of $\Omega_j\beta e_1$, i.e. $\lambda_j$. Therefore, the residual norm is available at no extra cost at each step and we only need to explicitly compute $y_j$ and $x$ after the GMRES algorithm has converged. The GMRES algorithm with Givens rotation and the non-explicit residual method is shown in Algorithm \ref{alg:2}.
+
+\begin{algorithm}
+    \DontPrintSemicolon
+    \caption{GMRES - Least-squares problem solved with Givens rotation}
+    \label{alg:2}
+    %\KwInput{Input: A, b}
+    \KwIn{$A$, $b$, maxiter, tol}
+    \KwOut{$x$}
+    
+    $x_0$ = Initial Guess \\
+    $r_0 = b - A x_0$ \\
+    $m = $ maxiter \\
+
+    \tcp{First Krylov vector $q_1$ with $\norm{ q_1 } = 1$}
+     $q_1 = r_0 / \norm{r_0}$ \\
+     %$Q_1 = q_1$ \\
+     $g_1 = \norm{r_0}$\\
+    \For{j=1..m}  {
+            \tcp{(1) Generate Krylov vector $q_{j+1}$}
+            $v = A q_j$ \\
+            \For{i=1..j}   {
+                $\tilde{h}_{i} = q_i^T v$ \\
+                $v = v - \tilde{h}_{i} q_i$
+            }
+            $\tilde{h}_{j+1} = \norm{ v }$ \\
+            $q_{j+1} = v / \tilde{h}_{j+1}$ \\
+            % Add $q_{j+1}$ as column to $Q_j$: $Q_{j+1} = \begin{pmatrix} Q_j & q_{j+1}\end{pmatrix}$\\
+
+            \tcp{(2) Apply Givens rotation to $\tilde{h}$ and $\beta e_1$}
+            $\tilde{r}_j$, $c_j$, $s_j$ = ApplyGivRot($\tilde{h}$, $\{c_j\}_{1<j}$, $\{s_j\}_{1<j}$)\\
+            %Update $R_j$: $R_{j} = \begin{pmatrix} R_{j-1} & r \\ 0 & 0\end{pmatrix}$\\
+            $\lambda_j = -s_j g_j$ \\
+            $g_j = c_j g_j$ \\
+            
+            % \tcp{(2) Find search vector $z$ that minimizes $\norm{ b - A(x_0 + z)}$}
+            %\tcp{(2) Find search vector $y_j$, where $x = x_0 + Q_j y_j$}
+            %min $\norm{ \beta e_1^{j+1} -  \tilde{H}_j y }$ for $y_j$, where $\tilde{H}_j = h_{1..j+1, 1..j}$, $\beta = \norm{ r_0 } $,  and $e_1^{j+1} = [1, 0, .., 0]^T \in \mathbb{R}^{j+1}$\\
+            \tcp{(3) Check residual}
+            \If{$|| \lambda_j || < $ tol} {
+                break
+            }
+            $g_{j+1} = \lambda_j$ \\
+    }
+    min $\norm{g - R_j y }$ \\
+    $x = x_0 + Q_j y_j$ \\
+    % $r = b - A x$ \\
+\end{algorithm}
+
+\begin{algorithm}
+    \DontPrintSemicolon
+    \caption{GivRot - Calculate Givens matrix components, $\begin{pmatrix}c_i & s_i   \\ -s_i & c_i \end{pmatrix}  \begin{pmatrix} f \\g \end{pmatrix}  = \begin{pmatrix} * \\ 0 \end{pmatrix}$}
+    \KwIn{$f$, $g$}
+    \KwOut{$c$, $s$}
+    $c = f / \sqrt{f^2 + g^2}$ \\
+    $s = g / \sqrt{f^2 + g^2}$
+\end{algorithm}
+
+\begin{algorithm}
+    \DontPrintSemicolon
+    \caption{ApplyGivRot - Apply Givens rotations product to a vector $\mathbf{v}$, i.e. $\mathbf{v} \rightarrow \Omega_j \mathbf{v} = (J_jJ_{i-1}..J_1) \mathbf{v}$}
+    \KwIn{$\mathbf{v} \in \mathbb{R}^{k+2}$, Givens components $\mathbf{c}\in \mathbb{R}^{k}$ and $\mathbf{s}\in \mathbb{R}^{k}$}
+    \KwOut{Updated $\mathbf{v}$, $k$-th Givens matrix components $c_k$, $s_k$}
+    \tcp{Apply for $i$-th column}
+    \For{i=1..k-1}   {
+        $
+        \begin{pmatrix}
+            v_i \\ v_{i+1}
+        \end{pmatrix}
+        = 
+        \begin{pmatrix}
+            c_i & s_i   \\ 
+            -s_i & c_i 
+        \end{pmatrix} 
+        \begin{pmatrix}
+            v_i \\ v_{i+1}
+        \end{pmatrix}
+        $
+    }
+    \tcp{Update the next cos/sin values for rotation}
+    $c_k$, $s_k$ = GivRot($v_k$, $v_{k+1}$) \\
+    \tcp{Eliminate $v_{k+1}$}
+    $v_k = c_k v_k + s_k v_{k+1}$ \\
+    $v_{k+1} = 0$
+            
+\end{algorithm}
+% \begin{algorithm}[!ht]
+% \DontPrintSemicolon
+  
+%   \KwIn{Your Input}
+%   \KwOut{Your output}
+%   $\sum_{i=1}^{\infty} := 0$ \tcp*{this is a comment}
+%   %\tcc{Now this is an if...else conditional loop}
+%   \If{Condition 1}
+%     {
+%         Do something    %\tcp*{this is another comment}
+%         \If{sub-Condition}
+%         {Do a lot}
+%     }
+%     \ElseIf{Condition 2}
+%     {
+%     	Do Otherwise \;
+%         \tcc{Now this is a for loop}
+%         \For{sequence}    
+%         { 
+%         	loop instructions
+%         }
+%     }
+%     \Else
+%     {
+%     	Do the rest
+%     }
+    
+%     \tcc{Now this is a While loop}
+%    \While{Condition}
+%    {
+%    		Do something\;
+%    }
+
+% \caption{Example code}
+% \end{algorithm}
+\printbibliography
+\end{document}
