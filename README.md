@@ -14,3 +14,4 @@ First draft for `ndarray_linalg`
 ## TODO
 - Preconditioner
 - Error Handling
+- Test complex values
