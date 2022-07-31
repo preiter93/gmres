@@ -12,6 +12,7 @@
 //! # TODO
 //! - Preconditioner
 //! - Error Handling
+//! - Test complex values
 use ndarray::{azip, s, Array1, Array2, ArrayBase, DataMut, Ix1};
 use ndarray_linalg::{
     krylov::AppendResult, krylov::Orthogonalizer, krylov::MGS, norm::Norm,
@@ -232,7 +233,6 @@ where
         }
         self.g.pop();
         let g = Array1::from_vec(self.g.clone());
-        // TODO: Handle error
         let y: Array1<A> = match r.solve_triangular(UPLO::Upper, Diag::NonUnit, &g) {
             Ok(y) => y,
             Err(_) => return GmresResult::Error,
@@ -305,7 +305,7 @@ where
         let result = self.ortho.div_append(&mut self.v);
         let norm = self.v.norm_l2();
         azip!((v in &mut self.v) *v = v.div_real(norm));
-        // TODO: Break Gmres if Dependent
+        // If dependent, it is catched in next iteration
         let mut h = match result {
             AppendResult::Added(coef) | AppendResult::Dependent(coef) => coef,
         };
@@ -319,7 +319,6 @@ where
         self.g[j] = self.cs[j] * self.g[j];
 
         // (3) Check residual
-        // TODO: Is abs() ok?
         let err = self.g[self.g.len() - 1].abs();
         self.e.push(err);
         self.m += 1;
