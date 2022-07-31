@@ -247,64 +247,6 @@ where
             Err(_) => GmresResult::Error,
         }
     }
-
-    // /// Iterate until convergent
-    // ///
-    // /// # Panics
-    // /// - Fail of triangular solve
-    // pub fn complete(mut self) -> GmresResult<A> {
-    //     // Iterate until completion
-    //     for _ in &mut self {}
-    //     // min |g − R y| for y, where R is upper triangular
-    //     let mut r: Array2<A> = Array2::zeros((self.m, self.m));
-    //     for (j, col) in self.r.iter().enumerate() {
-    //         for (i, v) in col.iter().enumerate() {
-    //             r[[i, j]] = *v;
-    //         }
-    //     }
-    //     self.g.pop();
-    //     let g = Array1::from_vec(self.g.clone());
-    //     let y: Array1<A> = match r.solve_triangular(UPLO::Upper, Diag::NonUnit, &g) {
-    //         Ok(y) => y,
-    //         Err(_) => return GmresResult::Error,
-    //     };
-    //     // Update x = x0 + Q y
-    //     let x = &self.x0 + &self.ortho.get_q().dot(&y);
-    //     let residual = self.residual();
-    //     if residual[residual.len() - 1] <= self.tol {
-    //         GmresResult::Converged((x, residual))
-    //     } else {
-    //         GmresResult::NotConverged((x, residual))
-    //     }
-    // }
-
-    // /// Iterate until convergent
-    // ///
-    // /// # Panics
-    // /// - Fail of triangular solve
-    // pub fn complete(mut self) -> Result<(X<A>, Residual<A>)> {
-    //     for _ in &mut self {}
-    //     // for err in &mut self {
-    //     //     if err <= self.tol {
-    //     //         break;
-    //     //     }
-    //     // }
-    //     // min |g − R y| for y, where R is upper triangular
-    //     let mut r: Array2<A> = Array2::zeros((self.m, self.m));
-    //     for (j, col) in self.r.iter().enumerate() {
-    //         for (i, v) in col.iter().enumerate() {
-    //             r[[i, j]] = *v;
-    //         }
-    //     }
-    //     self.g.pop();
-    //     let g = Array1::from_vec(self.g.clone());
-    //     // TODO: Handle error
-    //     let y: Array1<A> = r.solve_triangular(UPLO::Upper, Diag::NonUnit, &g)?;
-    //     // Update x = x0 + Q y
-    //     let x = &self.x0 + &self.ortho.get_q().slice(s![.., ..self.m]).dot(&y);
-    //     let residual = self.residual();
-    //     Ok((x, residual))
-    // }
 }
 
 impl<'a, A, S, F, Ortho> Iterator for Gmres<'a, A, S, F, Ortho>
