@@ -271,6 +271,7 @@ where
         if self.m > 0 && self.r[self.r.len() - 1][self.m - 1].abs() < self.ortho.tolerance() {
             return None;
         }
+
         // Number of current iteration
         let j = self.m;
         // (1) Generate new Krylov vector
@@ -377,5 +378,19 @@ mod test {
         let (size, iter, residual) = (b.len(), e.len() - 1, e[e.len() - 1]);
         println!("Size {:?} | iter {:?} | Res {:4.2e}", size, iter, residual);
         approx_eq(&b, &a.dot(&x));
+    }
+
+    #[test]
+    /// a is linearly dependent, test should not converge
+    fn test3() {
+        let a = array![[1., 1., 1.], [1., 1., 1.], [1., 1., 1.]];
+        let b = array![3., 2., 7.];
+        let x0: Array1<f64> = Array1::zeros(b.len());
+        let maxiter = b.len();
+        let result = gmres_mgs(&a, &b, x0, maxiter, 1e-8, 1e-8);
+        match result {
+            GmresResult::Converged(_) | GmresResult::Error => panic!(),
+            GmresResult::NotConverged(_) => (),
+        }
     }
 }
