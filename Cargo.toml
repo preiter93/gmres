@@ -9,3 +9,6 @@ edition = "2021"
 ndarray = "0.15.0"
 ndarray-linalg = { version = "0.14", features = ["openblas-static"] }
 num-traits = "0.2"
+
+[dev-dependencies]
+ndarray-rand = "0.14.0"

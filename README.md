@@ -7,6 +7,10 @@ Generalized minimum residual method to iteratively solve
 
 First draft for `ndarray_linalg`
 
-# Documentation
+## Documentation
 
 <a href="https://github.com/preiter93/gmres/blob/master/doc/gmres.pdf" target="_blank">Algorithm</a>
+
+## TODO
+- Preconditioner
+- Error Handling

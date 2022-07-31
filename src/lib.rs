@@ -4,6 +4,14 @@
 //! `A x = b`.
 //!
 //! First draft for `ndarray_linalg`
+//!
+//! # Documentation
+//!
+//! <a href="https://github.com/preiter93/gmres/blob/master/doc/gmres.pdf" target="_blank">Algorithm</a>
+//!
+//! # TODO
+//! - Preconditioner
+//! - Error Handling
 use ndarray::{azip, s, Array1, Array2, ArrayBase, DataMut, Ix1};
 use ndarray_linalg::{
     krylov::AppendResult, krylov::Orthogonalizer, krylov::MGS, norm::Norm,
@@ -12,6 +20,35 @@ use ndarray_linalg::{
 use ndarray_linalg::{Diag, UPLO};
 use num_traits::One;
 use std::iter::Iterator;
+
+/// X-vector
+type X<A> = Array1<A>;
+
+/// Residual vector
+type Residual<A> = Vec<<A as Scalar>::Real>;
+
+/// Gmres Result
+pub enum GmresResult<A: Scalar> {
+    Converged((X<A>, Residual<A>)),
+    NotConverged((X<A>, Residual<A>)),
+    Error,
+}
+
+impl<A: Scalar> GmresResult<A> {
+    /// Returns the Gmres result, consuming the `self` value.
+    ///
+    /// # Panics
+    /// Panics if `GmresResult` returned with an error.
+    #[must_use]
+    pub fn unwrap(self) -> (X<A>, Residual<A>) {
+        match self {
+            GmresResult::Converged(val) | GmresResult::NotConverged(val) => val,
+            GmresResult::Error => panic!("Gmres returned with errors. No solution was found."),
+        }
+    }
+}
+
+// pub type Result<T> = ::std::result::Result<T, GmresError>;
 
 // Gmres iterator
 pub struct Gmres<'a, A, S, F, Ortho>
@@ -33,6 +70,8 @@ where
     m: usize,
     /// Maximum number of iterations
     maxiter: usize,
+    /// Tolerance for Gmres convergence
+    tol: A::Real,
     /// `r` = Givens_rotation(H)
     r: Vec<Array1<A>>,
     /// `g` = Givens_rotation(`|r0|e1`)
@@ -42,13 +81,7 @@ where
     /// Sine component of Givens matrix
     sn: Vec<A>,
     /// Residual
-    e: Vec<<A as Scalar>::Real>,
-    // /// Right hand side
-    // b: ArrayBase<S, Ix1>,
-    // /// Arnoldi iterator
-    // arnoldi: Arnoldi<A, OwnedRepr<A>, &'a F, Ortho>
-    // /// Tolerance for convergence
-    // tol: <A as Scalar>::Real,
+    e: Vec<A::Real>,
 }
 
 impl<'a, A, S, F, Ortho> Gmres<'a, A, S, F, Ortho>
@@ -68,43 +101,57 @@ where
         b: &ArrayBase<S, Ix1>,
         x0: ArrayBase<S, Ix1>,
         mut ortho: Ortho,
-        maxiter: usize,
-        // tol: <A as Scalar>::Real,
+        // maxiter: usize,
+        // tol: A::Real,
     ) -> Self {
         assert_eq!(ortho.len(), 0);
         assert!(ortho.tolerance() < One::one());
-        assert!(maxiter <= b.len());
+        // assert!(maxiter <= b.len());
         // First Krylov vector
         let mut v = b - a.apply(&x0);
         // normalize before append
         let norm = v.norm_l2();
         azip!((v in &mut v)  *v = v.div_real(norm));
         ortho.append(v.view());
-        // Additional storage for Givens rotation
-        let r = vec![];
-        let g = vec![A::from(norm).unwrap()];
-        let e = vec![norm];
-        let cs = vec![];
-        let sn = vec![];
-        let m = 0;
 
         Gmres {
             a,
             x0,
             v,
             ortho,
-            m,
-            maxiter,
-            r,
-            g,
-            cs,
-            sn,
-            e,
+            m: 0,
+            maxiter: b.len(),
+            tol: <A>::real(1e-8_f32),
+            r: vec![],
+            g: vec![A::from(norm).unwrap()],
+            cs: vec![],
+            sn: vec![],
+            e: vec![norm],
         }
     }
 
-    /// Dimension of Krylov subspace
+    /// Set Maximum number of iterations
+    #[must_use]
+    pub fn maxiter(mut self, maxiter: usize) -> Self {
+        // assert!(maxiter <= self.dim());
+        self.maxiter = maxiter;
+        self
+    }
+
+    /// Set convergence tolerance
+    #[must_use]
+    pub fn tol(mut self, tol: A::Real) -> Self {
+        self.tol = tol;
+        self
+    }
+
+    /// Dimension of problem
     pub fn dim(&self) -> usize {
+        self.x0.len()
+    }
+
+    /// Dimension of Krylov subspace
+    pub fn dim_krylov(&self) -> usize {
         self.ortho.len()
     }
 
@@ -173,12 +220,9 @@ where
     ///
     /// # Panics
     /// - Fail of triangular solve
-    pub fn complete(mut self, tol: <A as Scalar>::Real) -> (Array1<A>, Vec<A::Real>) {
-        for err in &mut self {
-            if err <= tol {
-                break;
-            }
-        }
+    pub fn complete(mut self) -> GmresResult<A> {
+        // Iterate until completion
+        for _ in &mut self {}
         // min |g − R y| for y, where R is upper triangular
         let mut r: Array2<A> = Array2::zeros((self.m, self.m));
         for (j, col) in self.r.iter().enumerate() {
@@ -186,17 +230,50 @@ where
                 r[[i, j]] = *v;
             }
         }
-        let diag = Diag::NonUnit;
-        let uplo = UPLO::Upper;
         self.g.pop();
         let g = Array1::from_vec(self.g.clone());
         // TODO: Handle error
-        let y: Array1<A> = r.solve_triangular(uplo, diag, &g).unwrap();
+        let y: Array1<A> = match r.solve_triangular(UPLO::Upper, Diag::NonUnit, &g) {
+            Ok(y) => y,
+            Err(_) => return GmresResult::Error,
+        };
         // Update x = x0 + Q y
         let x = &self.x0 + &self.ortho.get_q().dot(&y);
         let residual = self.residual();
-        (x, residual)
+        if residual[residual.len() - 1] <= self.tol {
+            GmresResult::Converged((x, residual))
+        } else {
+            GmresResult::NotConverged((x, residual))
+        }
     }
+
+    // /// Iterate until convergent
+    // ///
+    // /// # Panics
+    // /// - Fail of triangular solve
+    // pub fn complete(mut self) -> Result<(X<A>, Residual<A>)> {
+    //     for _ in &mut self {}
+    //     // for err in &mut self {
+    //     //     if err <= self.tol {
+    //     //         break;
+    //     //     }
+    //     // }
+    //     // min |g − R y| for y, where R is upper triangular
+    //     let mut r: Array2<A> = Array2::zeros((self.m, self.m));
+    //     for (j, col) in self.r.iter().enumerate() {
+    //         for (i, v) in col.iter().enumerate() {
+    //             r[[i, j]] = *v;
+    //         }
+    //     }
+    //     self.g.pop();
+    //     let g = Array1::from_vec(self.g.clone());
+    //     // TODO: Handle error
+    //     let y: Array1<A> = r.solve_triangular(UPLO::Upper, Diag::NonUnit, &g)?;
+    //     // Update x = x0 + Q y
+    //     let x = &self.x0 + &self.ortho.get_q().slice(s![.., ..self.m]).dot(&y);
+    //     let residual = self.residual();
+    //     Ok((x, residual))
+    // }
 }
 
 impl<'a, A, S, F, Ortho> Iterator for Gmres<'a, A, S, F, Ortho>
@@ -206,13 +283,22 @@ where
     F: LinearOperator<Elem = A>,
     Ortho: Orthogonalizer<Elem = A>,
 {
-    type Item = <A as Scalar>::Real;
+    type Item = A::Real;
 
     fn next(&mut self) -> Option<Self::Item> {
         // Maximum number of iterations reached
         if self.m >= self.maxiter {
             return None;
         }
+        // Convergence limit has been reached
+        if self.e[self.e.len() - 1] <= self.tol {
+            return None;
+        }
+        // Krylov vectors are linearly dependent
+        if self.m > 0 && self.r[self.r.len() - 1][self.m - 1].abs() < self.ortho.tolerance() {
+            return None;
+        }
+        // Number of current iteration
         let j = self.m;
         // (1) Generate new Krylov vector
         self.a.apply_mut(&mut self.v);
@@ -221,8 +307,7 @@ where
         azip!((v in &mut self.v) *v = v.div_real(norm));
         // TODO: Break Gmres if Dependent
         let mut h = match result {
-            AppendResult::Added(coef) => coef,
-            AppendResult::Dependent(coef) => coef,
+            AppendResult::Added(coef) | AppendResult::Dependent(coef) => coef,
         };
 
         // (2) Apply Givens rotation
@@ -260,27 +345,65 @@ pub fn gmres_mgs<'a, A, S, F>(
     maxiter: usize,
     tol_mgs: A::Real,
     tol_gmres: A::Real,
-) -> (Array1<A>, Vec<A::Real>)
+) -> GmresResult<A>
 where
     A: Scalar + Lapack,
     S: DataMut<Elem = A>,
     F: LinearOperator<Elem = A> + 'a,
 {
     let mgs = MGS::new(b.len(), tol_mgs);
-    Gmres::new(a, b, x0, mgs, maxiter).complete(tol_gmres)
+    Gmres::new(a, b, x0, mgs)
+        .maxiter(maxiter)
+        .tol(tol_gmres)
+        .complete()
 }
 
-fn main() {
-    use ndarray::array;
-    println!("Hello, world!");
-    let a = array![[1., 2., 3.], [3., 4., 5.], [4., 7., 8.]];
-    let b = array![3., 2., 7.];
-    let x0: Array1<f64> = Array1::zeros(b.len());
-    let maxiter = b.len();
-    let tol_mgs = 1e-8;
-    let tol_gmres = 1e-8;
-    let (x, res) = gmres_mgs(&a, &b, x0, maxiter, tol_mgs, tol_gmres);
-    println!("{:?}", x);
-    println!("{:?}", a.dot(&x));
-    println!("{:?}", res);
+#[cfg(test)]
+mod test {
+    //! cargo test -- --show-output
+    use super::*;
+    use ndarray::{array, Data, Dimension};
+    use ndarray_rand::rand_distr::Uniform;
+    use ndarray_rand::RandomExt;
+
+    /// Test approx equality of two arrays element-wise
+    ///
+    /// # Panics
+    /// Panics when difference is larger than 1e-3.
+    pub fn approx_eq<A, S, D>(x: &ArrayBase<S, D>, y: &ArrayBase<S, D>)
+    where
+        A: Scalar,
+        S: Data<Elem = A>,
+        D: Dimension,
+    {
+        let tol = <A>::real(1e-5_f32);
+        for (a, b) in x.iter().zip(y.iter()) {
+            assert!(((*a - *b).abs() < tol), "Got {} vs {}.", b, a);
+        }
+    }
+
+    #[test]
+    fn test1() {
+        let a = array![[1., 2., 3.], [3., 4., 5.], [4., 7., 8.]];
+        let b = array![3., 2., 7.];
+        let x0: Array1<f64> = Array1::zeros(b.len());
+        let maxiter = b.len();
+        let (x, e) = gmres_mgs(&a, &b, x0, maxiter, 1e-8, 1e-8).unwrap();
+        let (size, iter, residual) = (b.len(), e.len() - 1, e[e.len() - 1]);
+        println!("Size {:?} | iter {:?} | Res {:4.2e}", size, iter, residual);
+        approx_eq(&b, &a.dot(&x));
+    }
+
+    #[test]
+    fn test2() {
+        let m = 28;
+        let a = Array2::<f64>::random((m, m), Uniform::new(0., 10.));
+        let b = Array1::<f64>::random(m, Uniform::new(0., 10.));
+        let x0: Array1<f64> = Array1::zeros(b.len());
+        let maxiter = b.len();
+        let (x, e) = gmres_mgs(&a, &b, x0, maxiter, 1e-8, 1e-8).unwrap();
+        let (size, iter, residual) = (b.len(), e.len() - 1, e[e.len() - 1]);
+        println!("Size {:?} | iter {:?} | Res {:4.2e}", size, iter, residual);
+        approx_eq(&b, &a.dot(&x));
+    }
 }
