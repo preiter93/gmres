@@ -12,6 +12,7 @@ First draft for `ndarray_linalg`
 <a href="https://github.com/preiter93/gmres/blob/master/doc/gmres.pdf" target="_blank">Algorithm</a>
 
 ## TODO
-- Preconditioner
+- Preconditioner : Done
 - Error Handling
-- Test complex values
+- Test complex values: Done
+- Use relative residual
